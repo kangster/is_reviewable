@@ -19,9 +19,6 @@ module IsReviewable
     belongs_to :reviewable, :polymorphic => true
     belongs_to :reviewer,   :polymorphic => true
     
-    # Validations
-    validates_presence_of :body, :rating
-    
     # Aliases.
     alias :object :reviewable
     alias :owner  :reviewer
