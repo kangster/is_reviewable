@@ -10,8 +10,8 @@ module IsReviewable
     
     ASSOCIATION_CLASS = ::Review
     CACHABLE_FIELDS = [
-        :reviews_count,
-        :average_rating
+        :ratings_total,
+        :ratings_count
       ].freeze
     DEFAULTS = {
         :accept_ip => false,
@@ -64,12 +64,40 @@ module IsReviewable
         raise InvalidConfigValueError, ":total_precision must be an integer." unless options[:total_precision].is_a?(::Fixnum)
         
         # Assocations: Review class (e.g. Review).
-        options[:review_class] = ASSOCIATION_CLASS
+        options[:review_class] ||= ASSOCIATION_CLASS
         
         # Had to do this here - not sure why. Subclassing Review should be enough? =S
         "::#{options[:review_class]}".constantize.class_eval do
+          # Increment count and add to total
+          after_create do |record|
+            if record.reviewable && record.reviewable.reviewable_caching_fields?
+              reviewable = record.reviewable.tap do |r|
+                r.ratings_total += record.rating.to_i
+                r.ratings_count += 1
+              end
+              reviewable.save_without_validation
+            end
+          end
+          
+          # Decrement count and subtract from total
+          before_destroy do |record|
+            if record.reviewable(true) && record.reviewable.reviewable_caching_fields?
+              reviewable = record.reviewable.tap do |r|
+                r.ratings_total -= record.rating.to_i
+                r.ratings_count -= 1
+              end
+              reviewable.save_without_validation
+            end
+          end
+          
           belongs_to :reviewable, :polymorphic => true unless self.respond_to?(:reviewable)
           belongs_to :reviewer,   :polymorphic => true unless self.respond_to?(:reviewer)
+          
+          validate do |review|
+            if review.rating && review.reviewable
+              review.errors.add(:rating, "must be a valid value in the specified scale") unless review.reviewable.class.rating_scale.include?(review.rating)
+            end
+          end
         end
         
         # Reviewer class(es).
@@ -104,7 +132,7 @@ module IsReviewable
         
         # Assocations: Reviewable class (self) (e.g. Page).
         self.class_eval do
-          has_many :reviews, :as => :reviewable, :dependent => :delete_all
+          has_many :reviews, :as => :reviewable, :dependent => :delete_all, :class_name => options[:review_class].name
           
           # Polymorphic has-many-through not supported (has_many :reviewers, :through => :reviews), so:
           # TODO: Implement with :join
@@ -203,8 +231,8 @@ module IsReviewable
       # Calculate average rating for this reviewable object.
       # 
       def average_rating(recalculate = false)
-        if !recalculate && self.reviewable_caching_fields?(:average_rating)
-          self.average_rating
+        if !recalculate && self.reviewable_caching_fields?
+          (self.ratings_total.to_f / self.ratings_count.to_f).round(reviewable_precision)
         else
           conditions = self.reviewable_conditions(true)
           conditions[0] << ' AND rating IS NOT NULL'
@@ -225,8 +253,8 @@ module IsReviewable
       # Get the total number of reviews for this object.
       #
       def total_reviews(recalculate = false)
-        if !recalculate && self.reviewable_caching_fields?(:total_reviews)
-          self.total_reviews
+        if !recalculate && self.reviewable_caching_fields?
+          self.ratings_total
         else
           ::Review.count(:conditions => self.reviewable_conditions)
         end
@@ -266,47 +294,34 @@ module IsReviewable
       # * <tt>:*</tt> - Any custom review field, e.g. :reviewer_mood => "angry" (optional)
       #
       def review!(identifiers_and_options)
-        begin
-          reviewer = self.validate_reviewer(identifiers_and_options)
-          review = self.review_by(identifiers_and_options)
-          
-          # Except for the reserved fields, any Review-fields should be be able to update.
-          review_values = identifiers_and_options.except(*::IsReviewable::Review::ASSOCIATIVE_FIELDS)
-          review_values[:rating] = review_values[:rating].to_f if review_values[:rating].present?
-          
-          if review_values[:rating].present? && !self.valid_rating_value?(review_values[:rating])
-            raise InvalidReviewValueError, "Invalid rating value: #{review_values[:rating]} not in [#{self.rating_scale.join(', ')}]."
-          end
-          
-          unless review.present?
-            # An un-existing reviewer of this reviewable object => Create a new review.
-            review = ::Review.new do |r|
-              r.reviewable_id   = self.id
-              r.reviewable_type = self.class.name
-              
-              if Support.is_active_record?(reviewer)
-                r.reviewer_id   = reviewer.id
-                r.reviewer_type = reviewer.class.name
-              else
-                r.ip = reviewer
-              end
-            end
-            self.reviews << review
-          else
-            # An existing reviewer of this reviewable object => Update the existing review.
-          end
-          
-          # Update non-association attributes, such as rating, body (the review text), and any custom fields.
+        review = build_review(identifiers_and_options)
+        review.save!
+        review
+      end
+      
+      def build_review(identifiers_and_options)
+        # Except for the reserved fields, any Review-fields should be be able to update.
+        review_values = identifiers_and_options.except(*::IsReviewable::Review::ASSOCIATIVE_FIELDS)
+        
+        reviewer = self.validate_reviewer(identifiers_and_options)
+        review = self.review_by(identifiers_and_options)
+        
+        if review
           review.attributes = review_values.slice(*review.attribute_names.collect { |an| an.to_sym })
+        else
+          review = self.reviews.build do |r|
+            r.attributes = review_values.slice(*r.attribute_names.collect { |an| an.to_sym })
           
-          # Save review and cachable data.
-          review.save && self.update_cache!
-          review
-        rescue InvalidReviewerError, InvalidReviewValueError => e
-          raise e
-        rescue Exception => e
-          raise RecordError, "Could not create/update review #{review.inspect} by #{reviewer.inspect}: #{e}"
+            if Support.is_active_record?(reviewer)
+              r.reviewer_id   = reviewer.id
+              r.reviewer_type = reviewer.class.name
+            else
+              r.ip = reviewer
+            end
+          end
         end
+        
+        review
       end
       
       # Remove the review of this reviewer from this object.
@@ -339,14 +354,6 @@ module IsReviewable
           self.save_without_validation if self.changed?
         end
         
-        # Checks if a certain value is a valid rating value for this reviewable object.
-        #
-        def valid_rating_value?(value_or_values)
-          value_or_values = [*value_or_values]
-          value_or_values.size == (value_or_values & self.rating_scale).size
-        end
-        alias :valid_rating_values? :valid_rating_value?
-        
         # Cachable fields for this reviewable class.
         #
         def reviewable_caching_fields
@@ -357,7 +364,7 @@ module IsReviewable
         #
         def reviewable_caching_fields?(*fields)
           fields = CACHABLE_FIELDS if fields.blank?
-          fields.all? { |field| self.attributes.has_key?(:"cached_#{field}") }
+          fields.all? { |field| self.attributes.with_indifferent_access.has_key?(:"#{field}") }
         end
         alias :has_reviewable_caching_fields? :reviewable_caching_fields?
         
