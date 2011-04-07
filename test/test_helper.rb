@@ -46,11 +46,11 @@ build_model :accounts
 build_model :posts
 
 build_model :reviewable_posts do
-  is_reviewable :by => :users, :scale => 1.0..5.0, :step => 0.5, :average_precision => 2, :accept_ip => true
+  is_reviewable :by => :users, :scale => 1.0..5.0, :step => 0.5, :average_precision => 2, :accept_ip => true, :review_class => "Review"
 end
 
 build_model :reviewable_articles do
-  is_reviewable :by => [:accounts, :users], :scale => [1,2,3], :accept_ip => false
+  is_reviewable :by => [:accounts, :users], :scale => [1,2,3], :accept_ip => false, :review_class => "Review"
 end
 
 build_model :my_review do
@@ -58,7 +58,7 @@ build_model :my_review do
 end
 
 build_model :cached_reviewable_posts do
-  is_reviewable :by => :users, :scale => 1..5, :total_precision => 2, :accept_ip => true, :review_class => MyReview
+  is_reviewable :by => :users, :scale => 1..5, :total_precision => 2, :accept_ip => true, :review_class => "MyReview"
 
   integer :ratings_count, :default => 0
   integer :ratings_total, :default => 0

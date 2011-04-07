@@ -1,14 +1,8 @@
 # coding: utf-8
 
-unless defined?(::Review)
-  class Review < ::IsReviewable::Review
-  end
-end
-
 module IsReviewable
   module Reviewable
-    
-    ASSOCIATION_CLASS = ::Review
+    ASSOCIATION_CLASS = "IsReviewable::Review"
     CACHABLE_FIELDS = [
         :ratings_total,
         :ratings_count
@@ -116,7 +110,7 @@ module IsReviewable
               #has_many  :reviews, :as => :reviewer, :dependent  => :delete_all
               has_many :reviews,
                 :foreign_key => :reviewer_id,
-                :class_name => options[:review_class].name
+                :class_name => options[:review_class]
               # Polymorphic has-many-through not supported (has_many :reviewables, :through => :reviews), so:
               # TODO: Implement with :join
               def reviewables(*args)
@@ -132,7 +126,7 @@ module IsReviewable
         
         # Assocations: Reviewable class (self) (e.g. Page).
         self.class_eval do
-          has_many :reviews, :as => :reviewable, :dependent => :delete_all, :class_name => options[:review_class].name
+          has_many :reviews, :as => :reviewable, :dependent => :delete_all, :class_name => options[:review_class]
           
           # Polymorphic has-many-through not supported (has_many :reviewers, :through => :reviews), so:
           # TODO: Implement with :join
