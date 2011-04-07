@@ -2,7 +2,7 @@
 
 module IsReviewable
   module Reviewable
-    ASSOCIATION_CLASS = "IsReviewable::Review"
+    ASSOCIATION_CLASS = ::IsReviewable::Review
     CACHABLE_FIELDS = [
         :ratings_total,
         :ratings_count
@@ -61,7 +61,7 @@ module IsReviewable
         options[:review_class] ||= ASSOCIATION_CLASS
         
         # Had to do this here - not sure why. Subclassing Review should be enough? =S
-        "::#{options[:review_class]}".constantize.class_eval do
+        options[:review_class].class_eval do
           # Increment count and add to total
           after_create do |record|
             if record.reviewable && record.reviewable.reviewable_caching_fields?
@@ -110,7 +110,7 @@ module IsReviewable
               #has_many  :reviews, :as => :reviewer, :dependent  => :delete_all
               has_many :reviews,
                 :foreign_key => :reviewer_id,
-                :class_name => options[:review_class]
+                :class_name => options[:review_class].name
               # Polymorphic has-many-through not supported (has_many :reviewables, :through => :reviews), so:
               # TODO: Implement with :join
               def reviewables(*args)
@@ -126,7 +126,7 @@ module IsReviewable
         
         # Assocations: Reviewable class (self) (e.g. Page).
         self.class_eval do
-          has_many :reviews, :as => :reviewable, :dependent => :delete_all, :class_name => options[:review_class]
+          has_many :reviews, :as => :reviewable, :dependent => :delete_all, :class_name => options[:review_class].name
           
           # Polymorphic has-many-through not supported (has_many :reviewers, :through => :reviews), so:
           # TODO: Implement with :join
