@@ -95,7 +95,7 @@ module IsReviewable
         end
         
         # Reviewer class(es).
-        options[:reviewer_classes] = [*options[:by]].collect do |class_name|
+        options[:reviewer_classes] = [*options[:by]].compact.collect do |class_name|
           begin
             class_name.to_s.singularize.classify.constantize
           rescue NameError => e

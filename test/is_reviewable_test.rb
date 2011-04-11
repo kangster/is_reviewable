@@ -17,6 +17,8 @@ class IsReviewableTest < Test::Unit::TestCase
     @reviewable_article = ::ReviewableArticle.create
     
     @cached_reviewable_post = ::CachedReviewablePost.create
+    
+    @anonymous_reviewable_post = ::AnonymousReviewablePost.create
   end
   
   context "initialization" do

@@ -63,3 +63,7 @@ build_model :cached_reviewable_posts do
   integer :ratings_count, :default => 0
   integer :ratings_total, :default => 0
 end
+
+build_model :anonymous_reviewable_posts do
+  is_reviewable :accept_ip => true
+end
